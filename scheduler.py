@@ -25,6 +25,7 @@ from linebot.v3.messaging import (
     MessagingApi,
     PushMessageRequest,
     TextMessage,
+    ImageMessage,
 )
 
 from config import (
@@ -49,6 +50,7 @@ import db
 import report
 import google_calendar
 import date_fmt
+import screenshot
 from flex_messages import reminder_card
 from storage import upload_file
 
@@ -73,6 +75,23 @@ def _push_flex(flex_message):
     with ApiClient(_configuration) as api_client:
         MessagingApi(api_client).push_message(
             PushMessageRequest(to=EMPLOYEE_GROUP_ID, messages=[flex_message])
+        )
+
+
+def _push_report(text: str, page_url: str = None):
+    """Same as _push_text, but also attaches a screenshot of the web report
+    page (see screenshot.py) as a second message when page_url is set."""
+    if not EMPLOYEE_GROUP_ID:
+        return
+    messages = [TextMessage(text=text)]
+    if page_url:
+        original_url, preview_url = screenshot.report_screenshot_urls(page_url)
+        messages.append(
+            ImageMessage(original_content_url=original_url, preview_image_url=preview_url)
+        )
+    with ApiClient(_configuration) as api_client:
+        MessagingApi(api_client).push_message(
+            PushMessageRequest(to=EMPLOYEE_GROUP_ID, messages=messages)
         )
 
 
@@ -222,7 +241,7 @@ def send_monthly_report():
         return  # nothing happened that month - skip the push, no need to notify
 
     if page_url:
-        _push_text(f"📊 รายงานสรุปเดือน{label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}")
+        _push_report(f"📊 รายงานสรุปเดือน{label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}", page_url)
     else:
         _push_text(f"📊 รายงานสรุปเดือน{label} ({count} รายการ)\n{url}")
 
@@ -244,7 +263,7 @@ def send_weekly_report():
         return
 
     if page_url:
-        _push_text(f"📊 รายงานสรุปสัปดาห์ {label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}")
+        _push_report(f"📊 รายงานสรุปสัปดาห์ {label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}", page_url)
     else:
         _push_text(f"📊 รายงานสรุปสัปดาห์ {label} ({count} รายการ)\n{url}")
 

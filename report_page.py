@@ -28,14 +28,11 @@ def _row_html(i: int, doc: dict) -> str:
     time_part = html_lib.escape(doc.get("meeting_time") or "-")
     location = html_lib.escape(doc.get("location") or "-")
     image_url = doc.get("image_url")
-    if image_url:
-        safe_img = html_lib.escape(image_url)
-        doc_cell = (
-            f'<a href="{safe_img}" target="_blank" rel="noopener">'
-            f'<img src="{safe_img}" class="thumb" alt="เอกสาร" loading="lazy"></a>'
-        )
-    else:
-        doc_cell = '<span class="no-doc">-</span>'
+    doc_link = (
+        f'<a href="{html_lib.escape(image_url)}" target="_blank" rel="noopener">ดูเอกสาร</a>'
+        if image_url
+        else "-"
+    )
 
     return f"""
         <tr>
@@ -46,7 +43,7 @@ def _row_html(i: int, doc: dict) -> str:
           <td>{date_part}</td>
           <td>{time_part}</td>
           <td>{location}</td>
-          <td>{doc_cell}</td>
+          <td>{doc_link}</td>
         </tr>"""
 
 
@@ -129,11 +126,6 @@ def render_report_html(label: str, documents: list, xlsx_url: str) -> str:
     background: #eef2ff; color: #3549b1; padding: 2px 8px;
     border-radius: 999px; font-size: 12px;
   }}
-  .thumb {{
-    width: 56px; height: 56px; object-fit: cover; border-radius: 8px;
-    display: block; border: 1px solid #eee;
-  }}
-  .no-doc {{ color: #ccc; }}
   a {{ color: #1a73e8; }}
   .empty {{ color: #999; text-align: center; padding: 40px 0; }}
   footer {{ text-align: center; color: #aaa; font-size: 12px; margin-top: 24px; }}

@@ -88,6 +88,7 @@ from linebot.v3.messaging import (
     MessagingApiBlob,
     ReplyMessageRequest,
     TextMessage,
+    ImageMessage,
     QuickReply,
     QuickReplyItem,
     MessageAction,
@@ -102,6 +103,7 @@ import google_calendar
 import list_cache
 import report
 import report_page
+import screenshot
 import voice_extract
 # NOTE: image_extract.py (Claude vision on document photos) is no longer
 # used - see the module docstring above for why.
@@ -279,27 +281,30 @@ def collision_warning_text(remind_at, exclude_id=None):
 
 
 def report_reply_text(year, month):
+    """Returns (text, page_url) - page_url is None if there's nothing to
+    screenshot (failed/empty report, or BASE_URL not configured)."""
     label = report.month_label(year, month)
     url, page_url, count = report.generate_monthly_report(year, month)
     if not url:
-        return f"ไม่สามารถสร้างรายงานเดือน{label}ได้ครับ (เช็คว่าตั้งค่า R2 ไว้ถูกต้องหรือยัง)"
+        return f"ไม่สามารถสร้างรายงานเดือน{label}ได้ครับ (เช็คว่าตั้งค่า R2 ไว้ถูกต้องหรือยัง)", None
     if count == 0:
-        return f"เดือน{label}ยังไม่มีเอกสารเข้ามาเลยครับ"
+        return f"เดือน{label}ยังไม่มีเอกสารเข้ามาเลยครับ", None
     if page_url:
-        return f"รายงานเดือน{label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}"
-    return f"รายงานเดือน{label} ({count} รายการ)\n{url}"
+        return f"รายงานเดือน{label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}", page_url
+    return f"รายงานเดือน{label} ({count} รายการ)\n{url}", None
 
 
 def weekly_report_reply_text(monday):
+    """Returns (text, page_url) - see report_reply_text."""
     label = report.week_label(monday)
     url, page_url, count = report.generate_weekly_report(monday)
     if not url:
-        return f"ไม่สามารถสร้างรายงานสัปดาห์ {label} ได้ครับ (เช็คว่าตั้งค่า R2 ไว้ถูกต้องหรือยัง)"
+        return f"ไม่สามารถสร้างรายงานสัปดาห์ {label} ได้ครับ (เช็คว่าตั้งค่า R2 ไว้ถูกต้องหรือยัง)", None
     if count == 0:
-        return f"สัปดาห์ {label} ยังไม่มีเอกสารเข้ามาเลยครับ"
+        return f"สัปดาห์ {label} ยังไม่มีเอกสารเข้ามาเลยครับ", None
     if page_url:
-        return f"รายงานสัปดาห์ {label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}"
-    return f"รายงานสัปดาห์ {label} ({count} รายการ)\n{url}"
+        return f"รายงานสัปดาห์ {label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}", page_url
+    return f"รายงานสัปดาห์ {label} ({count} รายการ)\n{url}", None
 
 
 def log_source(event):
@@ -335,6 +340,23 @@ def reply_confirmation_card(reply_token, pending):
     are buttons on the card itself, so no separate quick-reply chip row."""
     card = flex_messages.confirmation_card(pending)
     reply_flex(reply_token, card)
+
+
+def reply_report(reply_token, text, page_url):
+    """Sends the report text, and - if page_url is set - a screenshot of
+    the web report page (report_page.py) as a second message, via the free
+    thum.io URL-to-image API (see screenshot.py). No image if BASE_URL
+    isn't configured (page_url is None) or the report was empty/failed."""
+    messages = [TextMessage(text=text)]
+    if page_url:
+        original_url, preview_url = screenshot.report_screenshot_urls(page_url)
+        messages.append(
+            ImageMessage(original_content_url=original_url, preview_image_url=preview_url)
+        )
+    with ApiClient(_line_configuration) as api_client:
+        MessagingApi(api_client).reply_message(
+            ReplyMessageRequest(reply_token=reply_token, messages=messages)
+        )
 
 
 def confirm_edit_cancel_quick_reply():
@@ -693,7 +715,8 @@ def handle_text(event):
 
     if text == "รายงานเดือนนี้":
         now = datetime.now()
-        reply(event.reply_token, report_reply_text(now.year, now.month))
+        report_text, page_url = report_reply_text(now.year, now.month)
+        reply_report(event.reply_token, report_text, page_url)
         return
 
     report_match = re.match(REPORT_MONTH_PATTERN, text)
@@ -702,13 +725,15 @@ def handle_text(event):
         if not (1 <= month <= 12):
             reply(event.reply_token, "เดือนไม่ถูกต้องครับ ใช้รูปแบบ YYYY-MM เช่น 2026-08")
             return
-        reply(event.reply_token, report_reply_text(year, month))
+        report_text, page_url = report_reply_text(year, month)
+        reply_report(event.reply_token, report_text, page_url)
         return
 
     if text == "รายงานสัปดาห์นี้":
         today = date.today()
         monday = today - timedelta(days=today.weekday())
-        reply(event.reply_token, weekly_report_reply_text(monday))
+        report_text, page_url = weekly_report_reply_text(monday)
+        reply_report(event.reply_token, report_text, page_url)
         return
 
     # Text-based nadd: "นัดลูกค้าพรุ่งนี้บ่าย 3" -> parsed straight into the
