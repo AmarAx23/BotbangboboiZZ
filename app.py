@@ -101,6 +101,7 @@ import flex_messages
 import google_calendar
 import list_cache
 import report
+import report_page
 import voice_extract
 # NOTE: image_extract.py (Claude vision on document photos) is no longer
 # used - see the module docstring above for why.
@@ -279,21 +280,25 @@ def collision_warning_text(remind_at, exclude_id=None):
 
 def report_reply_text(year, month):
     label = report.month_label(year, month)
-    url, count = report.generate_monthly_report(year, month)
+    url, page_url, count = report.generate_monthly_report(year, month)
     if not url:
         return f"ไม่สามารถสร้างรายงานเดือน{label}ได้ครับ (เช็คว่าตั้งค่า R2 ไว้ถูกต้องหรือยัง)"
     if count == 0:
         return f"เดือน{label}ยังไม่มีเอกสารเข้ามาเลยครับ"
+    if page_url:
+        return f"รายงานเดือน{label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}"
     return f"รายงานเดือน{label} ({count} รายการ)\n{url}"
 
 
 def weekly_report_reply_text(monday):
     label = report.week_label(monday)
-    url, count = report.generate_weekly_report(monday)
+    url, page_url, count = report.generate_weekly_report(monday)
     if not url:
         return f"ไม่สามารถสร้างรายงานสัปดาห์ {label} ได้ครับ (เช็คว่าตั้งค่า R2 ไว้ถูกต้องหรือยัง)"
     if count == 0:
         return f"สัปดาห์ {label} ยังไม่มีเอกสารเข้ามาเลยครับ"
+    if page_url:
+        return f"รายงานสัปดาห์ {label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}"
     return f"รายงานสัปดาห์ {label} ({count} รายการ)\n{url}"
 
 
@@ -362,6 +367,19 @@ def health():
     minutes - keeps a free-tier host that sleeps on inactivity (like
     Render's Hobby plan) awake so scheduled reminders keep firing on time."""
     return "OK"
+
+
+@app.route("/report/<token>", methods=["GET"])
+def report_page_view(token):
+    """The web summary page report.py's generate_*_report() links to (see
+    report_page.py for the HTML builder). token-gated, no login - anyone
+    with the link can view it, same as the R2 document links."""
+    page = db.get_report_page(token)
+    if not page:
+        return "ไม่พบรายงานนี้ครับ (ลิงก์อาจพิมพ์ผิดหรือไม่ถูกต้อง)", 404
+
+    documents = db.get_documents_in_range(page["start_date"], page["end_date"])
+    return report_page.render_report_html(page["label"], documents, page["xlsx_url"])
 
 
 @app.route("/callback", methods=["POST"])

@@ -213,7 +213,7 @@ def send_monthly_report():
         year, month = today.year, today.month - 1
 
     label = report.month_label(year, month)
-    url, count = report.generate_monthly_report(year, month)
+    url, page_url, count = report.generate_monthly_report(year, month)
 
     if not url:
         _push_text(f"⚠️ สร้างรายงานเดือน{label}อัตโนมัติไม่สำเร็จครับ (เช็คการตั้งค่า R2)")
@@ -221,7 +221,10 @@ def send_monthly_report():
     if count == 0:
         return  # nothing happened that month - skip the push, no need to notify
 
-    _push_text(f"📊 รายงานสรุปเดือน{label} ({count} รายการ)\n{url}")
+    if page_url:
+        _push_text(f"📊 รายงานสรุปเดือน{label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}")
+    else:
+        _push_text(f"📊 รายงานสรุปเดือน{label} ({count} รายการ)\n{url}")
 
 
 def send_weekly_report():
@@ -232,7 +235,7 @@ def send_weekly_report():
 
     last_monday = (datetime.now() - timedelta(days=7)).date()
     label = report.week_label(last_monday)
-    url, count = report.generate_weekly_report(last_monday)
+    url, page_url, count = report.generate_weekly_report(last_monday)
 
     if not url:
         _push_text(f"⚠️ สร้างรายงานสัปดาห์ {label} อัตโนมัติไม่สำเร็จครับ (เช็คการตั้งค่า R2)")
@@ -240,7 +243,10 @@ def send_weekly_report():
     if count == 0:
         return
 
-    _push_text(f"📊 รายงานสรุปสัปดาห์ {label} ({count} รายการ)\n{url}")
+    if page_url:
+        _push_text(f"📊 รายงานสรุปสัปดาห์ {label} ({count} รายการ)\n{page_url}\n\nไฟล์ Excel: {url}")
+    else:
+        _push_text(f"📊 รายงานสรุปสัปดาห์ {label} ({count} รายการ)\n{url}")
 
 
 def backup_database():

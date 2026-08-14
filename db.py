@@ -140,6 +140,23 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # column already exists
 
+        # Web report summary pages (report_page.py) - a long random token
+        # instead of a sequential id so the URL itself is the only thing
+        # that grants access (no login system; see report.py's docstring).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS report_pages (
+                token TEXT PRIMARY KEY,
+                report_type TEXT,
+                label TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                xlsx_url TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
 
 def save_pending(user_id, subject, meeting_date, meeting_time, location, image_url, category=None, assignee=None):
     with get_db() as conn:
@@ -437,6 +454,23 @@ def get_recurring_rule(rule_id):
 def deactivate_recurring_rule(rule_id):
     with get_db() as conn:
         conn.execute("UPDATE recurring_reminders SET active = 0 WHERE id = ?", (rule_id,))
+
+
+def create_report_page(token, report_type, label, start_date, end_date, xlsx_url):
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO report_pages (token, report_type, label, start_date, end_date, xlsx_url)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (token, report_type, label, start_date, end_date, xlsx_url),
+        )
+
+
+def get_report_page(token):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM report_pages WHERE token = ?", (token,)).fetchone()
+        return dict(row) if row else None
 
 
 def reminder_exists_for_rule_on(rule_id, date_str):

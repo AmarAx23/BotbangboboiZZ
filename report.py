@@ -1,21 +1,31 @@
 """Generate an Excel summary of every document the bot processed (whether
 or not it was ever confirmed as a reminder), upload it to R2, and return a
-public download link.
+public download link - plus a link to a nicer web summary page
+(report_page.py, served at /report/<token>) covering the same data.
 
 Two flavors, sharing the same workbook builder:
   - Monthly: on demand ("รายงานเดือนนี้" / "รายงานเดือน YYYY-MM") or
     automatically by scheduler.py on the configured day each month.
   - Weekly: on demand ("รายงานสัปดาห์นี้") or automatically by scheduler.py
-    every Monday, covering the prior Mon-Sun week."""
+    every Monday, covering the prior Mon-Sun week.
+
+The web page link uses a long random token instead of a sequential id, and
+there's no login system - same trust model as the R2 links this bot already
+sends (see config.BASE_URL's docstring). Requires BASE_URL to be set; if
+it's blank, generate_*_report() just returns page_url=None and callers fall
+back to sharing only the raw Excel link, exactly like before this feature
+existed."""
 
 import calendar
 import io
+import secrets
 from datetime import date, timedelta
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
 import db
+from config import BASE_URL
 from storage import upload_file
 
 THAI_MONTHS = [
@@ -74,12 +84,24 @@ def _build_workbook(title: str, documents: list):
     return buf.getvalue()
 
 
+def _make_report_page(report_type: str, label: str, start_date: str, end_date: str, xlsx_url: str):
+    """Stores a report_pages row and returns the public page URL, or None
+    if BASE_URL isn't configured yet."""
+    if not BASE_URL:
+        return None
+    token = secrets.token_urlsafe(24)
+    db.create_report_page(token, report_type, label, start_date, end_date, xlsx_url)
+    return f"{BASE_URL}/report/{token}"
+
+
 def generate_monthly_report(year: int, month: int):
-    """Returns (public_url, document_count), or (None, 0) if the upload fails."""
+    """Returns (xlsx_url, page_url, document_count), or (None, None, 0) if
+    the upload fails. page_url is None if BASE_URL isn't configured."""
     start_date, end_date = _month_range(year, month)
     documents = db.get_documents_in_range(start_date, end_date)
+    label = month_label(year, month)
 
-    xlsx_bytes = _build_workbook(month_label(year, month), documents)
+    xlsx_bytes = _build_workbook(label, documents)
     key = f"reports/{year:04d}-{month:02d}.xlsx"
 
     try:
@@ -90,19 +112,22 @@ def generate_monthly_report(year: int, month: int):
         )
     except Exception as exc:
         print(f"[report] failed to upload monthly report: {exc}")
-        return None, 0
+        return None, None, 0
 
-    return url, len(documents)
+    page_url = _make_report_page("monthly", label, start_date, end_date, url)
+    return url, page_url, len(documents)
 
 
 def generate_weekly_report(monday: date):
     """monday: a date that is (or gets normalized to) the Monday of the
-    target week. Returns (public_url, document_count), or (None, 0) if the
-    upload fails."""
+    target week. Returns (xlsx_url, page_url, document_count), or
+    (None, None, 0) if the upload fails. page_url is None if BASE_URL isn't
+    configured."""
     monday, sunday = _week_range(monday)
+    label = week_label(monday)
     documents = db.get_documents_in_range(monday.isoformat(), sunday.isoformat())
 
-    xlsx_bytes = _build_workbook(week_label(monday), documents)
+    xlsx_bytes = _build_workbook(label, documents)
     key = f"reports/week-{monday.isoformat()}.xlsx"
 
     try:
@@ -113,9 +138,10 @@ def generate_weekly_report(monday: date):
         )
     except Exception as exc:
         print(f"[report] failed to upload weekly report: {exc}")
-        return None, 0
+        return None, None, 0
 
-    return url, len(documents)
+    page_url = _make_report_page("weekly", label, monday.isoformat(), sunday.isoformat(), url)
+    return url, page_url, len(documents)
 
 
 def month_label(year: int, month: int) -> str:

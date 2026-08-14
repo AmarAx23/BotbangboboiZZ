@@ -24,6 +24,12 @@ R2_PUBLIC_URL_BASE = os.environ.get("R2_PUBLIC_URL_BASE", "")
 
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "reminders.db")
 
+# Public base URL of this app itself (e.g. https://your-app.onrender.com,
+# no trailing slash) - used to build links to the web report summary page
+# (report_page.py / the /report/<token> route). Leave blank to fall back to
+# sending just the raw Excel link, same as before that feature existed.
+BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
+
 # Fixed destination for reminder push notifications: the "employees" LINE
 # group. Officers confirm reminders in a separate "staff" group/chat, but
 # every confirmed reminder is always pushed to this one group.
