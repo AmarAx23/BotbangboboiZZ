@@ -5,6 +5,9 @@
   - confirmation_card: the "is this right?" preview shown right after a
     photo/voice message/"นัด..." text (or after editing), with the document
     photo as a hero image and ยืนยัน/แก้ไขข้อมูล/ยกเลิก as in-card buttons.
+  - document_carousel: "รายการเอกสาร"/"ค้นหา ..." results as a horizontally
+    scrollable set of cards with the actual document photo, instead of a
+    plain text list of links.
 
 Kept isolated from scheduler.py/app.py so those files just call the builder
 and get back something they can drop straight into a `messages=[...]` list
@@ -13,6 +16,7 @@ for reply_message/push_message."""
 from linebot.v3.messaging import (
     FlexMessage,
     FlexBubble,
+    FlexCarousel,
     FlexBox,
     FlexText,
     FlexButton,
@@ -181,3 +185,62 @@ def confirmation_card(pending: dict, quick_reply=None):
         contents=bubble,
         quick_reply=quick_reply,
     )
+
+
+def _document_bubble(index: int, doc: dict):
+    subject = doc.get("subject") or "(ไม่มีชื่อเรื่อง)"
+    date_part = date_fmt.to_thai_date(doc.get("meeting_date")) or "-"
+    category = doc.get("category")
+    assignee = doc.get("assignee")
+    image_url = doc.get("image_url")
+
+    header = FlexBox(
+        layout="horizontal",
+        padding_all="12px",
+        contents=[
+            FlexText(text=f"#{index}", size="xs", color="#aaaaaa", weight="bold"),
+            *(
+                [FlexText(text=category, size="xs", color=_ACCENT_COLOR, weight="bold", align="end")]
+                if category
+                else []
+            ),
+        ],
+    )
+
+    body_rows = [
+        FlexText(text=subject, size="md", weight="bold", wrap=True, max_lines=3),
+        FlexText(text=date_part, size="xs", color="#aaaaaa", margin="sm"),
+    ]
+    if assignee:
+        body_rows.append(FlexText(text=f"มอบหมาย: {assignee}", size="xs", color="#aaaaaa"))
+    if not image_url:
+        body_rows.append(FlexText(text="(ไม่มีรูปแนบ)", size="xs", color="#cccccc", margin="sm"))
+
+    bubble_kwargs = {
+        "header": header,
+        "body": FlexBox(layout="vertical", spacing="xs", contents=body_rows),
+    }
+
+    if image_url:
+        bubble_kwargs["hero"] = FlexImage(url=image_url, size="full", aspect_ratio="20:13", aspect_mode="cover")
+        bubble_kwargs["footer"] = FlexBox(
+            layout="vertical",
+            contents=[
+                FlexButton(
+                    style="link",
+                    height="sm",
+                    action=URIAction(label="เปิดรูปเต็ม", uri=image_url),
+                )
+            ],
+        )
+
+    return FlexBubble(**bubble_kwargs)
+
+
+def document_carousel(documents: list, alt_text: str):
+    """documents: list of dicts from db.get_recent_documents/search_documents
+    (already in display order - the returned carousel's card order is what
+    list_cache should be keyed to for "ลบเอกสาร <เลข>"). Max 10 bubbles per
+    LINE's carousel limit, which matches the existing query limits."""
+    bubbles = [_document_bubble(i, doc) for i, doc in enumerate(documents, start=1)]
+    return FlexMessage(alt_text=alt_text, contents=FlexCarousel(contents=bubbles))

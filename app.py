@@ -202,40 +202,25 @@ def parse_manual_edit(text):
     return fields
 
 
-def document_list_text(user_id):
-    """Numbered so "ลบเอกสาร <เลข>" can reference an entry; caches the
+def reply_documents(reply_token, user_id, docs, empty_text, alt_text):
+    """Shared by "รายการเอกสาร" and "ค้นหา ..." - shows results as a Flex
+    carousel (photo, category, subject, date) instead of a text list of
+    links, numbered so "ลบเอกสาร <เลข>" can reference an entry. Caches the
     shown numbering into list_cache under the "documents" namespace."""
-    docs = db.get_recent_documents(limit=5)
     list_cache.set_list(user_id, [d["id"] for d in docs], namespace="documents")
 
     if not docs:
-        return "ยังไม่มีเอกสารที่ส่งเข้ามาครับ"
-    lines = ["เอกสารล่าสุด 5 รายการ:"]
-    for i, d in enumerate(docs, start=1):
-        date_part = date_fmt.to_thai_date(d["meeting_date"]) or "-"
-        cat = f" [{d['category']}]" if d.get("category") else ""
-        who = f" (มอบหมาย: {d['assignee']})" if d.get("assignee") else ""
-        lines.append(f"{i}. {d['subject'] or '(ไม่มีชื่อเรื่อง)'}{cat}{who} ({date_part}) {d['image_url'] or ''}")
-    lines.append("")
-    lines.append('พิมพ์ "ลบเอกสาร <เลข>" เพื่อลบรายการที่บันทึกผิดครับ')
-    return "\n".join(lines)
+        reply(reply_token, empty_text)
+        return
 
-
-def search_results_text(user_id, keyword):
-    results = db.search_documents(keyword)
-    list_cache.set_list(user_id, [d["id"] for d in results], namespace="documents")
-
-    if not results:
-        return f'ไม่พบเอกสารที่เกี่ยวกับ "{keyword}" ครับ'
-    lines = [f'ผลค้นหา "{keyword}" ({len(results)} รายการ):']
-    for i, d in enumerate(results, start=1):
-        date_part = date_fmt.to_thai_date(d["meeting_date"]) or "-"
-        cat = f" [{d['category']}]" if d.get("category") else ""
-        who = f" (มอบหมาย: {d['assignee']})" if d.get("assignee") else ""
-        lines.append(f"{i}. {d['subject'] or '(ไม่มีชื่อเรื่อง)'}{cat}{who} ({date_part}) {d['image_url'] or ''}")
-    lines.append("")
-    lines.append('พิมพ์ "ลบเอกสาร <เลข>" เพื่อลบรายการที่บันทึกผิดครับ')
-    return "\n".join(lines)
+    card = flex_messages.document_carousel(docs, alt_text=alt_text)
+    with ApiClient(_line_configuration) as api_client:
+        MessagingApi(api_client).reply_message(
+            ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[card, TextMessage(text='พิมพ์ "ลบเอกสาร <เลข>" เพื่อลบรายการที่บันทึกผิดครับ')],
+            )
+        )
 
 
 def upcoming_reminders_text(user_id):
@@ -515,12 +500,23 @@ def handle_text(event):
         return
 
     if text == "รายการเอกสาร":
-        reply(event.reply_token, document_list_text(user_id))
+        docs = db.get_recent_documents(limit=5)
+        reply_documents(
+            event.reply_token, user_id, docs,
+            empty_text="ยังไม่มีเอกสารที่ส่งเข้ามาครับ",
+            alt_text="เอกสารล่าสุด 5 รายการ",
+        )
         return
 
     search_match = re.match(SEARCH_PATTERN, text)
     if search_match:
-        reply(event.reply_token, search_results_text(user_id, search_match.group(1).strip()))
+        keyword = search_match.group(1).strip()
+        docs = db.search_documents(keyword)
+        reply_documents(
+            event.reply_token, user_id, docs,
+            empty_text=f'ไม่พบเอกสารที่เกี่ยวกับ "{keyword}" ครับ',
+            alt_text=f'ผลค้นหา "{keyword}" ({len(docs)} รายการ)',
+        )
         return
 
     delete_document_match = re.match(DELETE_DOCUMENT_PATTERN, text)
