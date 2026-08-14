@@ -1,0 +1,10 @@
+flask
+python-dotenv
+line-bot-sdk>=3.5.0
+anthropic
+boto3
+apscheduler
+google-api-python-client
+google-auth
+google-genai
+openpyxl
