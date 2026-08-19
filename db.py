@@ -281,6 +281,23 @@ def get_today_reminders(date_str):
         return [dict(r) for r in rows]
 
 
+def get_reminders_in_range(start_date_str, end_date_str):
+    """Not-yet-fired reminders whose remind_at date falls within
+    [start_date_str, end_date_str] inclusive (both "YYYY-MM-DD"), soonest
+    first - used for the weekly appointment brief (Mon-Sun)."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM reminders
+            WHERE substr(remind_at, 1, 10) BETWEEN ? AND ?
+              AND sent = 0
+            ORDER BY remind_at
+            """,
+            (start_date_str, end_date_str),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_reminders_near(remind_at_str, window_minutes=60, exclude_id=None):
     """Other not-yet-fired reminders whose remind_at is within
     +/-window_minutes of remind_at_str - used for the "นัดชนกัน" warning

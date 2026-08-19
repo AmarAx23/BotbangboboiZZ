@@ -16,7 +16,7 @@
     to R2 so it survives a lost/reset machine."""
 
 import os
-from datetime import timedelta
+from datetime import date, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from linebot.v3.messaging import (
@@ -219,6 +219,47 @@ def send_morning_brief():
     _push_text("\n".join(lines))
 
 
+def send_weekly_appointment_brief():
+    """Push a summary of every upcoming reminder for this Mon-Sun week, to
+    the employee group - same idea as send_morning_brief but for the whole
+    week instead of just today. Runs every Sunday and Monday morning at
+    MORNING_BRIEF_HOUR (see start_scheduler); both sends describe the same
+    week, since "the Monday that is today or comes next" lands on the same
+    date whether today is Sunday or Monday."""
+    if not MORNING_BRIEF_ENABLED:
+        return
+
+    today = now_local().date()
+    monday = today + timedelta(days=(0 - today.weekday()) % 7)
+    sunday = monday + timedelta(days=6)
+    label = report.week_label(monday)
+
+    reminders = db.get_reminders_in_range(monday.isoformat(), sunday.isoformat())
+
+    if not reminders:
+        _push_text(f"📅 สรุปนัดหมายสัปดาห์นี้ ({label})\nสัปดาห์นี้ไม่มีนัดหมายครับ")
+        return
+
+    lines = [f"📅 สรุปนัดหมายสัปดาห์นี้ ({label}) มีทั้งหมด {len(reminders)} รายการ"]
+    current_date = None
+    for r in reminders:
+        r_date = r["remind_at"][:10]
+        if r_date != current_date:
+            current_date = r_date
+            try:
+                weekday_name = WEEKDAY_NAMES_TH[date.fromisoformat(r_date).weekday()]
+            except ValueError:
+                weekday_name = ""
+            lines.append("")
+            lines.append(f"{weekday_name} {date_fmt.to_thai_date(r_date)}")
+        time_part = r["remind_at"][11:16] if len(r["remind_at"]) >= 16 else r["remind_at"]
+        loc = f" @ {r['location']}" if r.get("location") else ""
+        cat = f" [{r['category']}]" if r.get("category") else ""
+        who = f" (มอบหมาย: {r['assignee']})" if r.get("assignee") else ""
+        lines.append(f"• {time_part} — {r['subject'] or 'การประชุม'}{loc}{cat}{who}")
+    _push_text("\n".join(lines))
+
+
 def send_monthly_report():
     """Generate the previous month's Excel report and push the R2 link to
     the employee group. Runs on MONTHLY_REPORT_DAY (default the 1st)."""
@@ -303,6 +344,14 @@ def start_scheduler():
     scheduler.add_job(
         send_morning_brief,
         "cron",
+        hour=MORNING_BRIEF_HOUR,
+        minute=0,
+        timezone=TIMEZONE,
+    )
+    scheduler.add_job(
+        send_weekly_appointment_brief,
+        "cron",
+        day_of_week="sun,mon",
         hour=MORNING_BRIEF_HOUR,
         minute=0,
         timezone=TIMEZONE,
