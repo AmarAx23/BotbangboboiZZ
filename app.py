@@ -135,6 +135,30 @@ EDIT_FIELD_PATTERNS = {
     "assignee": r"มอบหมาย\s*[:：]\s*(.+)",
 }
 
+_THAI_MONTH_NAMES = (
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+)
+
+
+def _looks_like_formal_document_text(text: str) -> bool:
+    """Broader trigger than text.startswith("นัด") - catches a whole
+    official memo pasted in as-is (e.g. starting with "มอบหมายให้ เวร ฯ
+    70 ..." then "เรื่อง ร่วมตรวจสอบ...") instead of a short "นัด..."
+    sentence. Requires "เรื่อง" (the standard subject-line marker in Thai
+    official documents) PLUS a second, independent signal - "มอบหมาย", a
+    Buddhist-era year marker, or a Thai month name - so ordinary group
+    chatter that happens to say the word "เรื่อง" in passing doesn't
+    accidentally trigger a parse attempt (and the "ไม่เข้าใจ..." reply that
+    follows a failed one)."""
+    if "เรื่อง" not in text:
+        return False
+    return (
+        "มอบหมาย" in text
+        or "พ.ศ." in text
+        or any(month in text for month in _THAI_MONTH_NAMES)
+    )
+
 # Scoped AI Q&A trigger: only messages starting with "ถามบอท:" get an AI
 # reply, so the bot doesn't auto-respond to normal group conversation.
 ASK_BOT_PATTERN = r"^ถามบอท\s*[:：]\s*(.+)"
@@ -738,10 +762,12 @@ def handle_text(event):
         reply_report(event.reply_token, report_text, page_url)
         return
 
-    # Text-based nadd: "นัดลูกค้าพรุ่งนี้บ่าย 3" -> parsed straight into the
-    # same pending -> confirm/edit/cancel flow used for photos, so it's
-    # archived and synced to Calendar the same way once confirmed.
-    if text.startswith("นัด"):
+    # Text-based nadd: either a short "นัดลูกค้าพรุ่งนี้บ่าย 3" sentence, or
+    # a whole official memo pasted in (see _looks_like_formal_document_text)
+    # - both parsed straight into the same pending -> confirm/edit/cancel
+    # flow used for photos, so it's archived and synced to Calendar the
+    # same way once confirmed.
+    if text.startswith("นัด") or _looks_like_formal_document_text(text):
         info = extract_meeting_info_from_text(text) or {}
         if not info.get("date") or not info.get("time"):
             reply(
