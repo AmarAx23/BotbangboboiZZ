@@ -16,7 +16,7 @@
     to R2 so it survives a lost/reset machine."""
 
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from linebot.v3.messaging import (
@@ -51,6 +51,7 @@ import report
 import google_calendar
 import date_fmt
 import screenshot
+from now_local import now_local
 from flex_messages import reminder_card
 from storage import upload_file
 
@@ -110,7 +111,7 @@ def _push_reminder(reminder: dict):
 
 
 def check_and_send_reminders():
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = now_local().strftime("%Y-%m-%d %H:%M:%S")
     for reminder in db.get_due_reminders(now_str):
         try:
             _push_reminder(reminder)
@@ -124,7 +125,7 @@ def check_and_send_advance_notices():
     if REMINDER_MINUTES_BEFORE <= 0:
         return
 
-    now = datetime.now()
+    now = now_local()
     # +/-1 minute window around the target mark so a 60s-interval poll
     # reliably catches it exactly once.
     window_start = (now + timedelta(minutes=REMINDER_MINUTES_BEFORE - 1)).strftime("%Y-%m-%d %H:%M:%S")
@@ -185,7 +186,7 @@ def generate_instance_for_rule(rule: dict, date_str: str):
 def generate_recurring_instances():
     """For every active "นัดประจำ" rule whose weekday matches today, create
     today's reminders row if we haven't already (idempotent)."""
-    now = datetime.now()
+    now = now_local()
     today_str = now.strftime("%Y-%m-%d")
     today_weekday = now.weekday()  # 0=Monday ... 6=Sunday
 
@@ -200,7 +201,7 @@ def send_morning_brief():
     if not MORNING_BRIEF_ENABLED:
         return
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = now_local().strftime("%Y-%m-%d")
     today_display = date_fmt.to_thai_date(today_str)
     reminders = db.get_today_reminders(today_str)
 
@@ -224,7 +225,7 @@ def send_monthly_report():
     if not MONTHLY_REPORT_ENABLED:
         return
 
-    today = datetime.now()
+    today = now_local()
     # Previous month, handling January -> December of the prior year.
     if today.month == 1:
         year, month = today.year - 1, 12
@@ -252,7 +253,7 @@ def send_weekly_report():
     if not WEEKLY_REPORT_ENABLED:
         return
 
-    last_monday = (datetime.now() - timedelta(days=7)).date()
+    last_monday = (now_local() - timedelta(days=7)).date()
     label = report.week_label(last_monday)
     url, page_url, count = report.generate_weekly_report(last_monday)
 
@@ -281,7 +282,7 @@ def backup_database():
     try:
         with open(DATABASE_PATH, "rb") as f:
             db_bytes = f.read()
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = now_local().strftime("%Y-%m-%d")
         upload_file(db_bytes, f"backups/reminders-{date_str}.db", "application/octet-stream")
     except Exception as exc:
         print(f"[scheduler] nightly backup failed: {exc}")

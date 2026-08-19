@@ -5,11 +5,11 @@ the bot)."""
 
 import json
 import re
-from datetime import datetime
 
 import anthropic
 
 from config import ANTHROPIC_API_KEY
+from now_local import now_local
 
 _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 _MODEL = "claude-haiku-4-5-20251001"
@@ -36,7 +36,7 @@ SYSTEM_PROMPT = """คุณคือตัวช่วยแปลงข้อ�
 def extract_meeting_info_from_text(text: str):
     """Returns a dict with subject/date/time/location, or None if the
     message wasn't confident enough to contain a real date+time."""
-    now_str = datetime.now().strftime("%A %d %B %Y %H:%M")
+    now_str = now_local().strftime("%A %d %B %Y %H:%M")
     user_message = f'วันเวลาปัจจุบัน: {now_str}\nข้อความ: "{text}"'
 
     response = _client.messages.create(

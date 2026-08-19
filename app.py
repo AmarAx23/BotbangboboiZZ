@@ -69,7 +69,7 @@ Additional commands (all work in the staff chat/group):
 
 import os
 import re
-from datetime import datetime, date, timedelta
+from datetime import timedelta
 
 from flask import Flask, request, abort
 
@@ -104,6 +104,7 @@ import list_cache
 import report
 import report_page
 import screenshot
+from now_local import now_local, today_local
 import voice_extract
 # NOTE: image_extract.py (Claude vision on document photos) is no longer
 # used - see the module docstring above for why.
@@ -616,7 +617,7 @@ def handle_text(event):
         # If today is the matching weekday and the time hasn't passed yet,
         # generate today's instance right away instead of making the user
         # wait a full week for the first reminder.
-        now = datetime.now()
+        now = now_local()
         note = ""
         if now.weekday() == weekday_index and now.strftime("%H:%M") < info["time"]:
             rule = db.get_recurring_rule(rule_id)
@@ -714,7 +715,7 @@ def handle_text(event):
         return
 
     if text == "รายงานเดือนนี้":
-        now = datetime.now()
+        now = now_local()
         report_text, page_url = report_reply_text(now.year, now.month)
         reply_report(event.reply_token, report_text, page_url)
         return
@@ -730,7 +731,7 @@ def handle_text(event):
         return
 
     if text == "รายงานสัปดาห์นี้":
-        today = date.today()
+        today = today_local()
         monday = today - timedelta(days=today.weekday())
         report_text, page_url = weekly_report_reply_text(monday)
         reply_report(event.reply_token, report_text, page_url)

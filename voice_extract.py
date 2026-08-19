@@ -11,9 +11,9 @@ of crashing."""
 
 import json
 import re
-from datetime import datetime
 
 from config import GEMINI_API_KEY
+from now_local import now_local
 
 _client = None
 if GEMINI_API_KEY:
@@ -57,7 +57,7 @@ def extract_meeting_info_from_audio(audio_bytes: bytes, mime_type: str = "audio/
     if not _client:
         return None
 
-    now_str = datetime.now().strftime("%A %d %B %Y %H:%M")
+    now_str = now_local().strftime("%A %d %B %Y %H:%M")
     prompt = PROMPT_TEMPLATE.format(now=now_str)
 
     try:
