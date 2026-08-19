@@ -1,11 +1,32 @@
 """SQLite storage for pending confirmations, confirmed reminders, the
 document archive, and recurring-reminder rules."""
 
+import json
 import os
 import sqlite3
 from contextlib import contextmanager
 
 from config import DATABASE_PATH, BACKUP_ENABLED
+
+
+def encode_image_urls(urls):
+    """list[str] -> JSON string for the image_urls column, or None for an
+    empty/missing list (keeps the column NULL instead of "[]" for old rows
+    that never had multiple images)."""
+    if not urls:
+        return None
+    return json.dumps(urls)
+
+
+def decode_image_urls(raw):
+    """image_urls column value -> list[str], always a list (never None) -
+    used by both this module and scheduler.py/flex_messages.py callers."""
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 
 def restore_from_backup_if_missing():
@@ -109,6 +130,11 @@ def init_db():
             "ALTER TABLE pending_confirmations ADD COLUMN assignee TEXT",
             "ALTER TABLE reminders ADD COLUMN assignee TEXT",
             "ALTER TABLE documents ADD COLUMN assignee TEXT",
+            # JSON-encoded list of every photo attached to this nadd/reminder
+            # (not just one) - image_url is kept in sync as the first entry
+            # for older code that only ever reads a single image.
+            "ALTER TABLE pending_confirmations ADD COLUMN image_urls TEXT",
+            "ALTER TABLE reminders ADD COLUMN image_urls TEXT",
         ):
             try:
                 conn.execute(ddl)
@@ -158,32 +184,44 @@ def init_db():
         )
 
 
-def save_pending(user_id, subject, meeting_date, meeting_time, location, image_url, category=None, assignee=None):
+def save_pending(user_id, subject, meeting_date, meeting_time, location, category=None, assignee=None, image_urls=None):
+    """image_urls: full ordered list of every photo attached to this nadd
+    so far. Pass None (the default) to leave whatever images the pending
+    already has untouched - same merge-on-None pattern as category/
+    assignee - so a "นัด..."/voice message sent after a photo doesn't wipe
+    it out. Pass [] explicitly to clear all attached images.
+    image_url (singular) is kept in sync as image_urls[0] for older code
+    that only ever reads one image (Excel report row, Calendar link, ...)."""
     with get_db() as conn:
-        if category is None or assignee is None:
+        if category is None or assignee is None or image_urls is None:
             existing = conn.execute(
-                "SELECT category, assignee FROM pending_confirmations WHERE user_id = ?", (user_id,)
+                "SELECT category, assignee, image_urls FROM pending_confirmations WHERE user_id = ?", (user_id,)
             ).fetchone()
             if category is None:
                 category = existing["category"] if existing else None
             if assignee is None:
                 assignee = existing["assignee"] if existing else None
+            if image_urls is None:
+                image_urls = decode_image_urls(existing["image_urls"]) if existing else []
+
+        image_url = image_urls[0] if image_urls else None
         conn.execute(
             """
             INSERT INTO pending_confirmations
-                (user_id, subject, meeting_date, meeting_time, location, image_url, category, assignee, awaiting_edit)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                (user_id, subject, meeting_date, meeting_time, location, image_url, image_urls, category, assignee, awaiting_edit)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             ON CONFLICT(user_id) DO UPDATE SET
                 subject=excluded.subject,
                 meeting_date=excluded.meeting_date,
                 meeting_time=excluded.meeting_time,
                 location=excluded.location,
                 image_url=excluded.image_url,
+                image_urls=excluded.image_urls,
                 category=excluded.category,
                 assignee=excluded.assignee,
                 awaiting_edit=0
             """,
-            (user_id, subject, meeting_date, meeting_time, location, image_url, category, assignee),
+            (user_id, subject, meeting_date, meeting_time, location, image_url, encode_image_urls(image_urls), category, assignee),
         )
 
 
@@ -192,7 +230,11 @@ def get_pending(user_id):
         row = conn.execute(
             "SELECT * FROM pending_confirmations WHERE user_id = ?", (user_id,)
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        pending = dict(row)
+        pending["image_urls"] = decode_image_urls(pending.get("image_urls"))
+        return pending
 
 
 def delete_pending(user_id):
@@ -219,17 +261,22 @@ def create_reminder(
     category=None,
     recurring_rule_id=None,
     assignee=None,
+    image_urls=None,
 ):
+    """image_url: kept for backward compat (first attached photo, or
+    None). image_urls: full ordered list of every photo attached to this
+    reminder - pass the pending's full list here so multi-photo
+    attachments carry over once confirmed."""
     with get_db() as conn:
         cur = conn.execute(
             """
             INSERT INTO reminders
-                (user_id, subject, remind_at, location, image_url, calendar_event_link,
+                (user_id, subject, remind_at, location, image_url, image_urls, calendar_event_link,
                  calendar_event_id, category, recurring_rule_id, assignee)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                user_id, subject, remind_at, location, image_url,
+                user_id, subject, remind_at, location, image_url, encode_image_urls(image_urls),
                 calendar_event_link, calendar_event_id, category, recurring_rule_id, assignee,
             ),
         )

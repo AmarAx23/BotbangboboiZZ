@@ -191,7 +191,7 @@ BOT_HELP_TEXT = (
     "• พิมพ์ \"นัด...\" เช่น \"นัดลูกค้าพรุ่งนี้บ่าย 3\" - บอทอ่านวันที่/เวลา/สถานที่/หมวดหมู่/มอบหมายให้อัตโนมัติ\n"
     "• ส่งข้อความเสียง - พูดนัดหมายได้เลย\n"
     "• \"นัดประจำ ทุก<วัน> <นัดหมาย>\" เช่น \"นัดประจำ ทุกวันจันทร์ 9 โมง ประชุมทีม\" - นัดซ้ำทุกสัปดาห์\n"
-    "• ส่งรูปเอกสาร - แนบเข้ากับนัดหมายที่กำลังทำอยู่ (ไม่ได้อ่านเนื้อหาในรูปให้ ต้องพิมพ์/แก้ไขข้อมูลเอง)\n"
+    "• ส่งรูปเอกสาร - แนบเข้ากับนัดหมายที่กำลังทำอยู่ ส่งได้หลายรูป (ไม่ได้อ่านเนื้อหาในรูปให้ ต้องพิมพ์/แก้ไขข้อมูลเอง)\n"
     "\n"
     "✅ ยืนยัน/แก้ไข (หลังพิมพ์นัด/ส่งเสียง/ส่งรูป)\n"
     "• \"ยืนยัน\" / \"แนบเอกสาร\" / \"แก้ไขข้อมูล\" / \"ยกเลิก\"\n"
@@ -445,9 +445,14 @@ def callback():
 def handle_image(event):
     """No AI reading of the photo (see module docstring) - just uploads it
     to R2 and attaches it to whatever nadd is already in progress (from
-    "นัด..." text, a voice message, or a prior photo). If there's no nadd
-    in progress yet, starts a blank one with just the photo attached, for
-    the officer to fill in by hand via "แก้ไขข้อมูล"."""
+    "นัด..." text, a voice message, or prior photos). Photos accumulate -
+    each one sent while a nadd is in progress gets appended to the list of
+    attached images (not replaced), so multiple pages/photos of the same
+    document can all ride along with one appointment. Shown in the
+    confirmation card / reminder push as a hero photo plus a thumbnail
+    strip for the rest. If there's no nadd in progress yet, starts a blank
+    one with just the photo attached, for the officer to fill in by hand
+    via "แก้ไขข้อมูล"."""
     log_source(event)
     user_id = event.source.user_id
     message_id = event.message.id
@@ -464,11 +469,13 @@ def handle_image(event):
     location = pending.get("location")
     category = pending.get("category")
     assignee = pending.get("assignee")
+    image_urls = (pending.get("image_urls") or []) + [image_url]
 
     # Archive every document received, regardless of what happens next
     # (confirmed, edited, or cancelled) - carries over whatever fields the
     # in-progress nadd already has, so the archive entry isn't blank when
-    # a photo is attached after typing "นัด...".
+    # a photo is attached after typing "นัด...". One row per photo, same
+    # as before - the documents archive was never limited to one image.
     db.log_document(
         user_id=user_id,
         subject=subject,
@@ -486,7 +493,7 @@ def handle_image(event):
         meeting_date=meeting_date,
         meeting_time=meeting_time,
         location=location,
-        image_url=image_url,
+        image_urls=image_urls,
         category=category,
         assignee=assignee,
     )
@@ -535,7 +542,8 @@ def handle_audio(event):
         meeting_date=info.get("date"),
         meeting_time=info.get("time"),
         location=info.get("location"),
-        image_url=None,
+        # image_urls omitted - preserves any photos already attached (e.g.
+        # a photo sent before this voice message), instead of wiping them.
         category=info.get("category"),
         assignee=info.get("assignee"),
     )
@@ -792,7 +800,7 @@ def handle_text(event):
             meeting_date=info.get("date"),
             meeting_time=info.get("time"),
             location=info.get("location"),
-            image_url=None,
+            # image_urls omitted - preserves any photos already attached.
             category=info.get("category"),
             assignee=info.get("assignee"),
         )
@@ -815,7 +823,7 @@ def handle_text(event):
             meeting_date=fields.get("meeting_date", pending["meeting_date"]),
             meeting_time=fields.get("meeting_time", pending["meeting_time"]),
             location=fields.get("location", pending["location"]),
-            image_url=pending["image_url"],
+            image_urls=pending.get("image_urls"),
             category=fields.get("category", pending.get("category")),
             assignee=fields.get("assignee", pending.get("assignee")),
         )
@@ -864,6 +872,7 @@ def handle_text(event):
             remind_at=remind_at,
             location=pending["location"],
             image_url=pending["image_url"],
+            image_urls=pending.get("image_urls"),
             calendar_event_link=calendar_link,
             calendar_event_id=calendar_event_id,
             category=pending.get("category"),

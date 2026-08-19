@@ -42,6 +42,37 @@ def _info_row(label: str, value: str):
     )
 
 
+def _image_strip(urls: list, max_thumbs: int = 4):
+    """A row of small square thumbnails for photos after the first one
+    (which is already shown full-width as the card's hero image). Tapping
+    a thumbnail opens that photo full-size. If there are more photos than
+    max_thumbs, the last tile shows a "+N" badge instead of overflowing."""
+    shown = urls[:max_thumbs]
+    contents = [
+        FlexImage(
+            url=u,
+            size="full",
+            aspect_ratio="1:1",
+            aspect_mode="cover",
+            action=URIAction(uri=u, label="เปิดรูป"),
+        )
+        for u in shown
+    ]
+    extra = len(urls) - len(shown)
+    if extra > 0:
+        contents.append(
+            FlexBox(
+                layout="vertical",
+                background_color="#00000066",
+                corner_radius="4px",
+                justify_content="center",
+                align_items="center",
+                contents=[FlexText(text=f"+{extra}", color="#ffffff", size="sm", weight="bold")],
+            )
+        )
+    return FlexBox(layout="horizontal", spacing="xs", margin="md", contents=contents)
+
+
 def reminder_card(
     header_text: str,
     subject: str,
@@ -50,12 +81,18 @@ def reminder_card(
     category: str = None,
     assignee: str = None,
     image_url: str = None,
+    image_urls: list = None,
     calendar_link: str = None,
     alt_text: str = None,
 ):
     """header_text: short label shown above the subject, e.g. "🔔 แจ้งเตือน"
     or "⏰ อีก 15 นาที ถึงเวลานัดหมาย". remind_at: already-formatted string,
-    e.g. "2026-08-14 14:00:00". Returns a FlexMessage ready to push."""
+    e.g. "2026-08-14 14:00:00". image_urls: every photo attached to this
+    reminder (preferred over the singular image_url when both are given) -
+    the first is shown as the hero image, the rest as a thumbnail strip.
+    Returns a FlexMessage ready to push."""
+    images = image_urls or ([image_url] if image_url else [])
+
     body_rows = [
         FlexText(text=header_text, size="sm", color=_ACCENT_COLOR, weight="bold"),
         FlexText(text=subject or "การประชุม", size="lg", weight="bold", wrap=True, margin="sm"),
@@ -72,14 +109,16 @@ def reminder_card(
             ],
         ),
     ]
+    if len(images) > 1:
+        body_rows.append(_image_strip(images[1:]))
 
     bubble_kwargs = {
         "body": FlexBox(layout="vertical", contents=body_rows),
     }
 
-    if image_url:
+    if images:
         bubble_kwargs["hero"] = FlexImage(
-            url=image_url,
+            url=images[0],
             size="full",
             aspect_ratio="20:13",
             aspect_mode="cover",
@@ -108,8 +147,9 @@ def reminder_card(
 
 def confirmation_card(pending: dict, quick_reply=None):
     """The "ข้อมูลตอนนี้เป็นดังนี้ครับ" preview shown after a photo/voice
-    message/"นัด..." text, or after editing - with the document photo (if
-    any) as a hero image and ยืนยัน/แก้ไขข้อมูล/ยกเลิก as real buttons.
+    message/"นัด..." text, or after editing - with the attached document
+    photo(s), if any, as a hero image plus a thumbnail strip for the rest,
+    and ยืนยัน/แก้ไขข้อมูล/ยกเลิก as real buttons.
     quick_reply: an optional QuickReply to also attach (kept for people who
     prefer tapping the chip row over scrolling to the card's buttons)."""
     subject = pending.get("subject") or "-"
@@ -118,6 +158,7 @@ def confirmation_card(pending: dict, quick_reply=None):
     location = pending.get("location") or "-"
     category = pending.get("category") or "-"
     assignee = pending.get("assignee") or "-"
+    images = pending.get("image_urls") or ([pending["image_url"]] if pending.get("image_url") else [])
 
     body_rows = [
         FlexText(text="📋 ตรวจสอบข้อมูลนัดหมาย", size="sm", color=_ACCENT_COLOR, weight="bold"),
@@ -136,8 +177,10 @@ def confirmation_card(pending: dict, quick_reply=None):
             ],
         ),
     ]
+    if len(images) > 1:
+        body_rows.append(_image_strip(images[1:]))
 
-    attach_label = "เปลี่ยนเอกสาร" if pending.get("image_url") else "แนบเอกสาร"
+    attach_label = "แนบรูปเพิ่ม" if images else "แนบเอกสาร"
 
     bubble_kwargs = {
         "body": FlexBox(layout="vertical", contents=body_rows),
@@ -170,9 +213,9 @@ def confirmation_card(pending: dict, quick_reply=None):
         ),
     }
 
-    if pending.get("image_url"):
+    if images:
         bubble_kwargs["hero"] = FlexImage(
-            url=pending["image_url"],
+            url=images[0],
             size="full",
             aspect_ratio="20:13",
             aspect_mode="cover",
