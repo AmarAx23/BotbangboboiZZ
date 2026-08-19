@@ -63,6 +63,7 @@ def _build_workbook(title: str, documents: list):
         cell.font = Font(bold=True)
 
     for i, doc in enumerate(documents, start=1):
+        images = doc.get("image_urls") or ([doc.get("image_url")] if doc.get("image_url") else [])
         ws.append([
             i,
             doc.get("subject") or "-",
@@ -72,7 +73,7 @@ def _build_workbook(title: str, documents: list):
             doc.get("meeting_time") or "-",
             doc.get("location") or "-",
             doc.get("received_at") or "-",
-            doc.get("image_url") or "-",
+            "\n".join(images) if images else "-",
         ])
 
     for col_cells in ws.columns:

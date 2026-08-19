@@ -471,18 +471,18 @@ def handle_image(event):
     assignee = pending.get("assignee")
     image_urls = (pending.get("image_urls") or []) + [image_url]
 
-    # Archive every document received, regardless of what happens next
-    # (confirmed, edited, or cancelled) - carries over whatever fields the
-    # in-progress nadd already has, so the archive entry isn't blank when
-    # a photo is attached after typing "นัด...". One row per photo, same
-    # as before - the documents archive was never limited to one image.
-    db.log_document(
+    # Archive this nadd as ONE documents row, updated in place as more
+    # photos/edits come in (instead of a fresh row per touch) - so texting,
+    # then attaching 3 photos, shows up as one entry in "รายการเอกสาร"/
+    # reports, not four near-duplicates.
+    document_id = db.upsert_draft_document(
+        document_id=pending.get("draft_document_id"),
         user_id=user_id,
         subject=subject,
         meeting_date=meeting_date,
         meeting_time=meeting_time,
         location=location,
-        image_url=image_url,
+        image_urls=image_urls,
         category=category,
         assignee=assignee,
     )
@@ -496,6 +496,7 @@ def handle_image(event):
         image_urls=image_urls,
         category=category,
         assignee=assignee,
+        draft_document_id=document_id,
     )
 
     pending = db.get_pending(user_id)
@@ -526,13 +527,16 @@ def handle_audio(event):
         )
         return
 
-    db.log_document(
+    pending = db.get_pending(user_id) or {}
+
+    document_id = db.upsert_draft_document(
+        document_id=pending.get("draft_document_id"),
         user_id=user_id,
         subject=info.get("subject"),
         meeting_date=info.get("date"),
         meeting_time=info.get("time"),
         location=info.get("location"),
-        image_url=None,
+        # image_urls omitted - preserves any photos already attached.
         category=info.get("category"),
         assignee=info.get("assignee"),
     )
@@ -546,6 +550,7 @@ def handle_audio(event):
         # a photo sent before this voice message), instead of wiping them.
         category=info.get("category"),
         assignee=info.get("assignee"),
+        draft_document_id=document_id,
     )
     pending = db.get_pending(user_id)
     reply_confirmation_card(event.reply_token, pending)
@@ -784,13 +789,14 @@ def handle_text(event):
             )
             return
 
-        db.log_document(
+        document_id = db.upsert_draft_document(
+            document_id=(pending or {}).get("draft_document_id"),
             user_id=user_id,
             subject=info.get("subject"),
             meeting_date=info.get("date"),
             meeting_time=info.get("time"),
             location=info.get("location"),
-            image_url=None,
+            # image_urls omitted - preserves any photos already attached.
             category=info.get("category"),
             assignee=info.get("assignee"),
         )
@@ -803,6 +809,7 @@ def handle_text(event):
             # image_urls omitted - preserves any photos already attached.
             category=info.get("category"),
             assignee=info.get("assignee"),
+            draft_document_id=document_id,
         )
         pending = db.get_pending(user_id)
         reply_confirmation_card(event.reply_token, pending)
@@ -826,6 +833,7 @@ def handle_text(event):
             image_urls=pending.get("image_urls"),
             category=fields.get("category", pending.get("category")),
             assignee=fields.get("assignee", pending.get("assignee")),
+            draft_document_id=pending.get("draft_document_id"),
         )
         pending = db.get_pending(user_id)
         reply_confirmation_card(event.reply_token, pending)

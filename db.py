@@ -135,6 +135,14 @@ def init_db():
             # for older code that only ever reads a single image.
             "ALTER TABLE pending_confirmations ADD COLUMN image_urls TEXT",
             "ALTER TABLE reminders ADD COLUMN image_urls TEXT",
+            "ALTER TABLE documents ADD COLUMN image_urls TEXT",
+            # Which documents.id row is being built up for the nadd
+            # currently in progress - lets handle_image/handle_audio/the
+            # text-nadd handler all update the SAME archive row as a
+            # message/photo comes in, instead of each one inserting a new
+            # near-duplicate row for what's really one appointment. Cleared
+            # automatically once the pending row is deleted (confirm/cancel).
+            "ALTER TABLE pending_confirmations ADD COLUMN draft_document_id INTEGER",
         ):
             try:
                 conn.execute(ddl)
@@ -184,18 +192,22 @@ def init_db():
         )
 
 
-def save_pending(user_id, subject, meeting_date, meeting_time, location, category=None, assignee=None, image_urls=None):
+def save_pending(user_id, subject, meeting_date, meeting_time, location, category=None, assignee=None, image_urls=None, draft_document_id=None):
     """image_urls: full ordered list of every photo attached to this nadd
     so far. Pass None (the default) to leave whatever images the pending
     already has untouched - same merge-on-None pattern as category/
     assignee - so a "นัด..."/voice message sent after a photo doesn't wipe
     it out. Pass [] explicitly to clear all attached images.
     image_url (singular) is kept in sync as image_urls[0] for older code
-    that only ever reads one image (Excel report row, Calendar link, ...)."""
+    that only ever reads one image (Excel report row, Calendar link, ...).
+    draft_document_id: the documents.id row this nadd is updating in place
+    (see db.upsert_draft_document) - merge-preserved on None the same way,
+    so it's only ever set once per nadd (on the first touch) and carried
+    forward untouched after that."""
     with get_db() as conn:
-        if category is None or assignee is None or image_urls is None:
+        if category is None or assignee is None or image_urls is None or draft_document_id is None:
             existing = conn.execute(
-                "SELECT category, assignee, image_urls FROM pending_confirmations WHERE user_id = ?", (user_id,)
+                "SELECT category, assignee, image_urls, draft_document_id FROM pending_confirmations WHERE user_id = ?", (user_id,)
             ).fetchone()
             if category is None:
                 category = existing["category"] if existing else None
@@ -203,13 +215,15 @@ def save_pending(user_id, subject, meeting_date, meeting_time, location, categor
                 assignee = existing["assignee"] if existing else None
             if image_urls is None:
                 image_urls = decode_image_urls(existing["image_urls"]) if existing else []
+            if draft_document_id is None:
+                draft_document_id = existing["draft_document_id"] if existing else None
 
         image_url = image_urls[0] if image_urls else None
         conn.execute(
             """
             INSERT INTO pending_confirmations
-                (user_id, subject, meeting_date, meeting_time, location, image_url, image_urls, category, assignee, awaiting_edit)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                (user_id, subject, meeting_date, meeting_time, location, image_url, image_urls, category, assignee, draft_document_id, awaiting_edit)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             ON CONFLICT(user_id) DO UPDATE SET
                 subject=excluded.subject,
                 meeting_date=excluded.meeting_date,
@@ -219,9 +233,10 @@ def save_pending(user_id, subject, meeting_date, meeting_time, location, categor
                 image_urls=excluded.image_urls,
                 category=excluded.category,
                 assignee=excluded.assignee,
+                draft_document_id=excluded.draft_document_id,
                 awaiting_edit=0
             """,
-            (user_id, subject, meeting_date, meeting_time, location, image_url, encode_image_urls(image_urls), category, assignee),
+            (user_id, subject, meeting_date, meeting_time, location, image_url, encode_image_urls(image_urls), category, assignee, draft_document_id),
         )
 
 
@@ -385,7 +400,17 @@ def get_reminders_near(remind_at_str, window_minutes=60, exclude_id=None):
         return [dict(r) for r in rows]
 
 
+def _decode_document_row(row):
+    doc = dict(row)
+    doc["image_urls"] = decode_image_urls(doc.get("image_urls"))
+    return doc
+
+
 def log_document(user_id, subject, meeting_date, meeting_time, location, image_url, category=None, assignee=None):
+    """Kept for anything that still wants a plain one-shot insert. The
+    in-progress-nadd handlers in app.py use upsert_draft_document instead
+    so texting/voice/multiple photos for the same appointment land on one
+    row instead of leaving behind several near-duplicates."""
     with get_db() as conn:
         cur = conn.execute(
             """
@@ -397,10 +422,56 @@ def log_document(user_id, subject, meeting_date, meeting_time, location, image_u
         return cur.lastrowid
 
 
+def upsert_draft_document(document_id, user_id, subject, meeting_date, meeting_time, location, category=None, assignee=None, image_urls=None):
+    """Creates (document_id=None) or updates in place (document_id=<int>)
+    the single documents row representing "whatever's being typed/
+    photographed for this nadd right now" - so a text message, an edit,
+    and 3 photos for the same appointment all update the SAME archive
+    entry instead of piling up as 4-5 near-duplicate rows. Returns the
+    row's id either way; pass it back into save_pending's
+    draft_document_id so the next touch in this nadd updates this same
+    row again.
+    image_urls=None on an update preserves whatever images that row
+    already has (same merge-on-None pattern as save_pending), so a text
+    correction sent after photos doesn't wipe them out."""
+    with get_db() as conn:
+        if document_id is not None:
+            if image_urls is None:
+                existing = conn.execute(
+                    "SELECT image_urls FROM documents WHERE id = ?", (document_id,)
+                ).fetchone()
+                image_urls = decode_image_urls(existing["image_urls"]) if existing else []
+            image_url = image_urls[0] if image_urls else None
+            conn.execute(
+                """
+                UPDATE documents SET
+                    subject = ?, meeting_date = ?, meeting_time = ?, location = ?,
+                    image_url = ?, image_urls = ?, category = ?, assignee = ?
+                WHERE id = ?
+                """,
+                (subject, meeting_date, meeting_time, location, image_url,
+                 encode_image_urls(image_urls), category, assignee, document_id),
+            )
+            return document_id
+
+        image_urls = image_urls or []
+        image_url = image_urls[0] if image_urls else None
+        cur = conn.execute(
+            """
+            INSERT INTO documents
+                (user_id, subject, meeting_date, meeting_time, location, image_url, image_urls, category, assignee)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, subject, meeting_date, meeting_time, location, image_url,
+             encode_image_urls(image_urls), category, assignee),
+        )
+        return cur.lastrowid
+
+
 def get_document(document_id):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
-        return dict(row) if row else None
+        return _decode_document_row(row) if row else None
 
 
 def delete_document(document_id):
@@ -413,7 +484,7 @@ def get_recent_documents(limit=5):
         rows = conn.execute(
             "SELECT * FROM documents ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_decode_document_row(r) for r in rows]
 
 
 def search_documents(keyword, limit=10):
@@ -429,7 +500,7 @@ def search_documents(keyword, limit=10):
             """,
             (like, like, like, like, limit),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_decode_document_row(r) for r in rows]
 
 
 def get_documents_in_range(start_date_str, end_date_str):
@@ -444,7 +515,7 @@ def get_documents_in_range(start_date_str, end_date_str):
             """,
             (start_date_str, end_date_str),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_decode_document_row(r) for r in rows]
 
 
 def list_upcoming_reminders(limit=10):

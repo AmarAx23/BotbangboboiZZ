@@ -27,12 +27,16 @@ def _row_html(i: int, doc: dict) -> str:
     date_part = html_lib.escape(date_fmt.to_thai_date(doc.get("meeting_date")) or "-")
     time_part = html_lib.escape(doc.get("meeting_time") or "-")
     location = html_lib.escape(doc.get("location") or "-")
-    image_url = doc.get("image_url")
-    doc_link = (
-        f'<a href="{html_lib.escape(image_url)}" target="_blank" rel="noopener">ดูเอกสาร</a>'
-        if image_url
-        else "-"
-    )
+    images = doc.get("image_urls") or ([doc.get("image_url")] if doc.get("image_url") else [])
+    if not images:
+        doc_link = "-"
+    elif len(images) == 1:
+        doc_link = f'<a href="{html_lib.escape(images[0])}" target="_blank" rel="noopener">ดูเอกสาร</a>'
+    else:
+        doc_link = " ".join(
+            f'<a href="{html_lib.escape(u)}" target="_blank" rel="noopener">รูป {n}</a>'
+            for n, u in enumerate(images, start=1)
+        )
 
     return f"""
         <tr>

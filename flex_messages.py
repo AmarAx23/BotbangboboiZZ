@@ -235,7 +235,8 @@ def _document_bubble(index: int, doc: dict):
     date_part = date_fmt.to_thai_date(doc.get("meeting_date")) or "-"
     category = doc.get("category")
     assignee = doc.get("assignee")
-    image_url = doc.get("image_url")
+    images = doc.get("image_urls") or ([doc.get("image_url")] if doc.get("image_url") else [])
+    image_url = images[0] if images else None
 
     header = FlexBox(
         layout="horizontal",
@@ -258,6 +259,8 @@ def _document_bubble(index: int, doc: dict):
         body_rows.append(FlexText(text=f"มอบหมาย: {assignee}", size="xs", color="#aaaaaa"))
     if not image_url:
         body_rows.append(FlexText(text="(ไม่มีรูปแนบ)", size="xs", color="#cccccc", margin="sm"))
+    elif len(images) > 1:
+        body_rows.append(_image_strip(images[1:]))
 
     bubble_kwargs = {
         "header": header,
