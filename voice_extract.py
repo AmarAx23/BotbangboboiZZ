@@ -14,6 +14,7 @@ import re
 
 from config import GEMINI_API_KEY
 from now_local import now_local
+from text_extract import _fix_buddhist_year
 
 _client = None
 if GEMINI_API_KEY:
@@ -85,4 +86,5 @@ def extract_meeting_info_from_audio(audio_bytes: bytes, mime_type: str = "audio/
 
     if not data.get("date") or not data.get("time"):
         return None
+    data["date"] = _fix_buddhist_year(data.get("date"))
     return data

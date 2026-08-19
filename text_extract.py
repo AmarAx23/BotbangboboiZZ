@@ -22,6 +22,30 @@ from now_local import now_local
 _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 _MODEL = "claude-haiku-4-5-20251001"
 
+_ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+
+
+def _fix_buddhist_year(date_str):
+    """Deterministic safety net: the model doesn't always reliably subtract
+    543 for a Buddhist-era (พ.ศ.) year despite the prompt instruction below
+    (confirmed in production - "20 สิงหาคม 2569" came back as "2569-08-20"
+    instead of "2026-08-20", silently scheduling the reminder ~543 years in
+    the future). Any extracted year over 2400 is unambiguously a Buddhist
+    year that slipped through unconverted - a real appointment is never
+    that far out - so correct it here in code instead of trusting the
+    model to always get it right."""
+    if not date_str:
+        return date_str
+    match = _ISO_DATE_RE.match(date_str)
+    if not match:
+        return date_str
+    year, month, day = match.groups()
+    year_int = int(year)
+    if year_int > 2400:
+        year_int -= 543
+        return f"{year_int:04d}-{month}-{day}"
+    return date_str
+
 SYSTEM_PROMPT = """คุณคือตัวช่วยแปลงข้อความภาษาไทยที่พูดถึงการนัดหมาย ให้เป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอกเหนือจาก JSON object นี้:
 
 {
@@ -75,6 +99,7 @@ def extract_meeting_info_from_text(text: str):
 
     if not data.get("date") or not data.get("time"):
         return None
+    data["date"] = _fix_buddhist_year(data.get("date"))
     return data
 
 
