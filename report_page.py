@@ -41,7 +41,7 @@ def _row_html(i: int, doc: dict) -> str:
     return f"""
         <tr>
           <td>{i}</td>
-          <td>{subject}</td>
+          <td class="subject-cell">{subject}</td>
           <td><span class="tag">{category}</span></td>
           <td>{assignee}</td>
           <td>{date_part}</td>
@@ -124,6 +124,7 @@ def render_report_html(label: str, documents: list, xlsx_url: str) -> str:
   }}
   table {{ border-collapse: collapse; width: 100%; font-size: 14px; white-space: nowrap; }}
   th, td {{ text-align: left; padding: 10px 14px; border-bottom: 1px solid #eee; vertical-align: middle; }}
+  td.subject-cell {{ white-space: normal; word-break: break-word; max-width: 260px; }}
   th {{ background: #fafafa; color: #555; font-weight: 600; }}
   tr:last-child td {{ border-bottom: none; }}
   .tag {{
