@@ -58,6 +58,14 @@ REMINDER_MINUTES_BEFORE = int(os.environ.get("REMINDER_MINUTES_BEFORE", "15"))
 MORNING_BRIEF_HOUR = int(os.environ.get("MORNING_BRIEF_HOUR", "7"))
 MORNING_BRIEF_ENABLED = os.environ.get("MORNING_BRIEF_ENABLED", "1") == "1"
 
+# hour/minute (0-23 / 0-59, local TIMEZONE) to push the summary of every
+# reminder in the current month - runs every morning (not just once a
+# month), so it's a running "here's what's left this month" view rather
+# than a one-time monthly wrap-up. Gated by MORNING_BRIEF_ENABLED, same
+# as the daily brief above.
+MONTHLY_APPOINTMENT_BRIEF_HOUR = int(os.environ.get("MONTHLY_APPOINTMENT_BRIEF_HOUR", "6"))
+MONTHLY_APPOINTMENT_BRIEF_MINUTE = int(os.environ.get("MONTHLY_APPOINTMENT_BRIEF_MINUTE", "55"))
+
 # --- Monthly report (optional) ---
 # Auto-generates an Excel summary of the previous month's documents/reminders
 # and pushes the download link to the employee group on this day/hour each

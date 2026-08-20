@@ -15,6 +15,7 @@
   - backup_database: once a day, uploads a copy of the local SQLite file
     to R2 so it survives a lost/reset machine."""
 
+import calendar
 import os
 from datetime import date, timedelta
 
@@ -36,6 +37,8 @@ from config import (
     REMINDER_MINUTES_BEFORE,
     MORNING_BRIEF_HOUR,
     MORNING_BRIEF_ENABLED,
+    MONTHLY_APPOINTMENT_BRIEF_HOUR,
+    MONTHLY_APPOINTMENT_BRIEF_MINUTE,
     MONTHLY_REPORT_ENABLED,
     MONTHLY_REPORT_DAY,
     MONTHLY_REPORT_HOUR,
@@ -222,28 +225,29 @@ def send_morning_brief():
     _push_text("\n".join(lines))
 
 
-def send_weekly_appointment_brief():
-    """Push a summary of every upcoming reminder for this Mon-Sun week, to
+def send_monthly_appointment_brief():
+    """Push a summary of every reminder in the current calendar month, to
     the employee group - same idea as send_morning_brief but for the whole
-    week instead of just today. Runs every Sunday and Monday morning at
-    MORNING_BRIEF_HOUR (see start_scheduler); both sends describe the same
-    week, since "the Monday that is today or comes next" lands on the same
-    date whether today is Sunday or Monday."""
+    month instead of just today. Runs every morning at
+    MONTHLY_APPOINTMENT_BRIEF_HOUR:MONTHLY_APPOINTMENT_BRIEF_MINUTE (see
+    start_scheduler), so it's a running "here's everything left this
+    month" view rather than a one-time send. Replaces the old Sun/Mon
+    weekly version - same content shape, wider date range, daily cadence."""
     if not MORNING_BRIEF_ENABLED:
         return
 
     today = now_local().date()
-    monday = today + timedelta(days=(0 - today.weekday()) % 7)
-    sunday = monday + timedelta(days=6)
-    label = report.week_label(monday)
+    month_start = date(today.year, today.month, 1)
+    month_end = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+    label = report.month_label(today.year, today.month)
 
-    reminders = db.get_reminders_in_range(monday.isoformat(), sunday.isoformat())
+    reminders = db.get_reminders_in_range(month_start.isoformat(), month_end.isoformat())
 
     if not reminders:
-        _push_text(f"📅 สรุปนัดหมายสัปดาห์นี้ ({label})\nสัปดาห์นี้ไม่มีนัดหมายครับ")
+        _push_text(f"📅 สรุปนัดหมายเดือนนี้ ({label})\nเดือนนี้ไม่มีนัดหมายครับ")
         return
 
-    lines = [f"📅 สรุปนัดหมายสัปดาห์นี้ ({label}) มีทั้งหมด {len(reminders)} รายการ"]
+    lines = [f"📅 สรุปนัดหมายเดือนนี้ ({label}) มีทั้งหมด {len(reminders)} รายการ"]
     current_date = None
     for r in reminders:
         r_date = r["remind_at"][:10]
@@ -352,11 +356,10 @@ def start_scheduler():
         timezone=TIMEZONE,
     )
     scheduler.add_job(
-        send_weekly_appointment_brief,
+        send_monthly_appointment_brief,
         "cron",
-        day_of_week="sun,mon",
-        hour=MORNING_BRIEF_HOUR,
-        minute=0,
+        hour=MONTHLY_APPOINTMENT_BRIEF_HOUR,
+        minute=MONTHLY_APPOINTMENT_BRIEF_MINUTE,
         timezone=TIMEZONE,
     )
     scheduler.add_job(
