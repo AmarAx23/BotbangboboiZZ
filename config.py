@@ -109,4 +109,4 @@ RECURRING_GENERATE_MINUTE = int(os.environ.get("RECURRING_GENERATE_MINUTE", "10"
 # happens. Each run overwrites the same day's R2 key (backups/reminders-
 # YYYY-MM-DD.db), so this doesn't pile up extra files.
 BACKUP_ENABLED = os.environ.get("BACKUP_ENABLED", "1") == "1"
-BACKUP_INTERVAL_MINUTES = int(os.environ.get("BACKUP_INTERVAL_MINUTES", "10"))
+BACKUP_INTERVAL_MINUTES = int(os.environ.get("BACKUP_INTERVAL_MINUTES", "5"))
