@@ -83,6 +83,7 @@ def reminder_card(
     image_url: str = None,
     image_urls: list = None,
     calendar_link: str = None,
+    reminder_id: int = None,
     alt_text: str = None,
 ):
     """header_text: short label shown above the subject, e.g. "🔔 แจ้งเตือน"
@@ -90,7 +91,13 @@ def reminder_card(
     e.g. "2026-08-14 14:00:00". image_urls: every photo attached to this
     reminder (preferred over the singular image_url when both are given) -
     the first is shown as the hero image, the rest as a thumbnail strip.
-    Returns a FlexMessage ready to push."""
+    reminder_id: when given, adds a "รับทราบแล้ว" button that re-marks the
+    reminder as sent - a manual escape hatch for the rare case a redeploy's
+    disk reset lets an already-handled reminder re-fire (see
+    scheduler.backup_database). Only pass this from the at-time push, not
+    the advance-notice one - those track separate sent/notified flags, and
+    acknowledging early shouldn't be able to suppress the real at-time
+    alert. Returns a FlexMessage ready to push."""
     images = image_urls or ([image_url] if image_url else [])
 
     body_rows = [
@@ -124,18 +131,28 @@ def reminder_card(
             aspect_mode="cover",
         )
 
+    footer_buttons = []
     if calendar_link:
-        bubble_kwargs["footer"] = FlexBox(
-            layout="vertical",
-            spacing="sm",
-            contents=[
-                FlexButton(
-                    style="link",
-                    height="sm",
-                    action=URIAction(label="ดูปฏิทิน", uri=calendar_link),
-                )
-            ],
+        footer_buttons.append(
+            FlexButton(
+                style="link",
+                height="sm",
+                action=URIAction(label="ดูปฏิทิน", uri=calendar_link),
+            )
         )
+    if reminder_id is not None:
+        footer_buttons.append(
+            FlexButton(
+                style="link",
+                height="sm",
+                action=MessageAction(
+                    label="✅ รับทราบแล้ว ไม่ต้องแจ้งซ้ำ",
+                    text=f"รับทราบแจ้งเตือน {reminder_id}",
+                ),
+            )
+        )
+    if footer_buttons:
+        bubble_kwargs["footer"] = FlexBox(layout="vertical", spacing="sm", contents=footer_buttons)
 
     bubble = FlexBubble(**bubble_kwargs)
 

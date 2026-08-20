@@ -110,6 +110,7 @@ def _push_reminder(reminder: dict):
         image_url=reminder.get("image_url"),
         image_urls=db.decode_image_urls(reminder.get("image_urls")),
         calendar_link=reminder.get("calendar_event_link"),
+        reminder_id=reminder["id"],
     )
     _push_flex(flex)
 

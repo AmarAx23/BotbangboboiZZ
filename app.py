@@ -165,6 +165,11 @@ ASK_BOT_PATTERN = r"^ถามบอท\s*[:：]\s*(.+)"
 
 RESCHEDULE_PATTERN = r"^เลื่อนนัด\s+(\d+)\s+เป็น\s+(.+)$"
 CANCEL_CONFIRMED_PATTERN = r"^ยกเลิกนัด\s+(\d+)\s*$"
+# Sent by the "✅ รับทราบแล้ว" button on the at-time reminder push (see
+# flex_messages.reminder_card's reminder_id param) - uses the reminder's
+# real db id directly (not a list_cache index) since the user never types
+# this by hand, just taps the button.
+ACK_REMINDER_PATTERN = r"^รับทราบแจ้งเตือน\s+(\d+)\s*$"
 SEARCH_PATTERN = r"^ค้นหา\s+(.+)$"
 REPORT_MONTH_PATTERN = r"^รายงานเดือน\s+(\d{4})-(\d{1,2})\s*$"
 DELETE_DOCUMENT_PATTERN = r"^ลบเอกสาร\s+(\d+)\s*$"
@@ -203,6 +208,7 @@ BOT_HELP_TEXT = (
     "• \"ยกเลิกนัด <เลข>\"\n"
     "• \"รายการนัดประจำ\" / \"ยกเลิกนัดประจำ <เลข>\"\n"
     "• สรุปนัดหมายรายเดือน (ทั้งเดือนปัจจุบัน) ส่งอัตโนมัติทุกเช้า 06:55 น.\n"
+    "• ตอนแจ้งเตือนถึงเวลานัด มีปุ่ม \"✅ รับทราบแล้ว ไม่ต้องแจ้งซ้ำ\" กดได้ถ้าบอทแจ้งซ้ำผิดพลาด\n"
     "\n"
     "📁 เอกสาร\n"
     "• \"รายการเอกสาร\" - เอกสารล่าสุด 5 รายการ\n"
@@ -685,6 +691,24 @@ def handle_text(event):
             return
         db.deactivate_recurring_rule(rule_id)
         reply(event.reply_token, f"ยกเลิกนัดหมายประจำ \"{rule['subject'] or 'การประชุม'}\" เรียบร้อยครับ")
+        return
+
+    ack_match = re.match(ACK_REMINDER_PATTERN, text)
+    if ack_match:
+        reminder_id = int(ack_match.group(1))
+        reminder = db.get_reminder(reminder_id)
+        # Idempotent either way - this exists as a manual escape hatch for
+        # the rare case a reminder re-fires after already being handled
+        # (e.g. a Render redeploy resetting sent=0 on a stale disk restore,
+        # see scheduler.backup_database), not a normal part of the flow.
+        db.mark_sent(reminder_id)
+        if reminder:
+            reply(
+                event.reply_token,
+                f"รับทราบแล้วครับ ไม่ต้องแจ้งเตือน \"{reminder['subject'] or 'การประชุม'}\" ซ้ำอีก 👍",
+            )
+        else:
+            reply(event.reply_token, "รับทราบแล้วครับ")
         return
 
     reschedule_match = re.match(RESCHEDULE_PATTERN, text)
