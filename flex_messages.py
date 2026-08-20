@@ -268,16 +268,17 @@ def _document_bubble(index: int, doc: dict):
     }
 
     if image_url:
-        bubble_kwargs["hero"] = FlexImage(url=image_url, size="full", aspect_ratio="20:13", aspect_mode="cover")
-        bubble_kwargs["footer"] = FlexBox(
-            layout="vertical",
-            contents=[
-                FlexButton(
-                    style="link",
-                    height="sm",
-                    action=URIAction(label="เปิดรูปเต็ม", uri=image_url),
-                )
-            ],
+        # Tappable hero (same as each _image_strip thumbnail below it) -
+        # opens just that one photo full-size. No footer button here
+        # anymore: it used to always link to only the FIRST photo even
+        # when there were several, which read as "see the full document"
+        # but only ever showed page 1.
+        bubble_kwargs["hero"] = FlexImage(
+            url=image_url,
+            size="full",
+            aspect_ratio="20:13",
+            aspect_mode="cover",
+            action=URIAction(uri=image_url, label="เปิดรูป"),
         )
 
     return FlexBubble(**bubble_kwargs)
