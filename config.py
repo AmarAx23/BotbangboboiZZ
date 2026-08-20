@@ -94,9 +94,19 @@ COLLISION_WINDOW_MINUTES = int(os.environ.get("COLLISION_WINDOW_MINUTES", "60"))
 RECURRING_GENERATE_HOUR = int(os.environ.get("RECURRING_GENERATE_HOUR", "0"))
 RECURRING_GENERATE_MINUTE = int(os.environ.get("RECURRING_GENERATE_MINUTE", "10"))
 
-# --- Nightly database backup (optional) ---
-# Uploads a copy of the local SQLite file to R2 every night so reminders/
-# documents survive a lost or reset machine. Uses the same R2 bucket/
-# credentials as everything else - no extra setup needed.
+# --- Database backup (optional) ---
+# Uploads a copy of the local SQLite file to R2 on this interval, so
+# reminders/documents survive a lost or reset machine. Uses the same R2
+# bucket/credentials as everything else - no extra setup needed.
+# Was a once-nightly cron job, but Render's free/starter web services get a
+# brand-new (empty) local disk on every redeploy - restore_from_backup_if_
+# missing() then restores whatever the LAST backup happened to be, which
+# could be up to 24h stale. That reset a reminder's "sent" flag back to 0
+# for anything sent/created since that backup, making it fire again on the
+# next 60s poll - confirmed in production (reminder due 09:30 kept
+# re-notifying after same-day redeploys). Backing up every few minutes
+# instead keeps that staleness window small no matter when a redeploy
+# happens. Each run overwrites the same day's R2 key (backups/reminders-
+# YYYY-MM-DD.db), so this doesn't pile up extra files.
 BACKUP_ENABLED = os.environ.get("BACKUP_ENABLED", "1") == "1"
-BACKUP_HOUR = int(os.environ.get("BACKUP_HOUR", "2"))
+BACKUP_INTERVAL_MINUTES = int(os.environ.get("BACKUP_INTERVAL_MINUTES", "10"))

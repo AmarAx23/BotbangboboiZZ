@@ -47,7 +47,7 @@ from config import (
     RECURRING_GENERATE_HOUR,
     RECURRING_GENERATE_MINUTE,
     BACKUP_ENABLED,
-    BACKUP_HOUR,
+    BACKUP_INTERVAL_MINUTES,
 )
 import db
 import report
@@ -318,9 +318,11 @@ def send_weekly_report():
 
 
 def backup_database():
-    """Nightly copy of the local SQLite file up to R2, so reminders/
-    documents survive a lost or reset machine. Silent on success (would
-    otherwise spam the group every night); only notifies on failure."""
+    """Periodic copy of the local SQLite file up to R2 (see
+    BACKUP_INTERVAL_MINUTES), so reminders/documents survive a lost or
+    reset machine, and a redeploy's fresh disk restores something close
+    to up-to-date instead of hours-stale. Silent on success (would
+    otherwise spam the group constantly); only notifies on failure."""
     if not BACKUP_ENABLED:
         return
 
@@ -380,10 +382,8 @@ def start_scheduler():
     )
     scheduler.add_job(
         backup_database,
-        "cron",
-        hour=BACKUP_HOUR,
-        minute=0,
-        timezone=TIMEZONE,
+        "interval",
+        minutes=BACKUP_INTERVAL_MINUTES,
     )
     scheduler.start()
     return scheduler
